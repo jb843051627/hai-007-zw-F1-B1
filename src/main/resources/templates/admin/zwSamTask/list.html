@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.pollix.at/thymeleaf/shiro">
+<head>
+    <th:block th:include="include :: header('采样任务到期派单台账')"/>
+</head>
+<body class="pear-container">
+<div class="layui-card">
+    <div class="layui-card-body">
+        <form class="layui-form" action="">
+            <div class="layui-form-item">
+                <label class="layui-form-label">事项编号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="itemNo" placeholder="计划代号-采样日" class="layui-input">
+                </div>
+                <label class="layui-form-label">点位代号</label>
+                <div class="layui-input-inline">
+                    <input type="text" name="siteNo" placeholder="" class="layui-input">
+                </div>
+                <label class="layui-form-label">状态</label>
+                <div class="layui-input-inline">
+                    <select name="status" class="layui-input">
+                        <option value="">全部</option>
+                        <option value="0">待派</option>
+                        <option value="1">已派</option>
+                        <option value="2">挂起</option>
+                        <option value="3">撤单</option>
+                        <option value="4">转作他理</option>
+                    </select>
+                </div>
+                <button class="pear-btn pear-btn-md pear-btn-primary" lay-submit lay-filter="sam-task-query">
+                    <i class="layui-icon layui-icon-search"></i>
+                    查询
+                </button>
+                <button type="reset" class="pear-btn pear-btn-md">
+                    <i class="layui-icon layui-icon-refresh"></i>
+                    重置
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="layui-card">
+    <div class="layui-card-body">
+        <table id="sam-task-table" lay-filter="sam-task-table"></table>
+    </div>
+</div>
+</body>
+
+<script type="text/html" id="sam-task-toolbar">
+    <button shiro:hasPermission="zw:zwSamTask:run" class="pear-btn pear-btn-primary pear-btn-md" lay-event="runOnce">
+        <i class="layui-icon layui-icon-refresh-3"></i>
+        跑一轮派单
+    </button>
+</script>
+
+<script type="text/html" id="sam-task-bar">
+    {{#  if(d.status == 0 || d.status == 2){ }}
+    <button shiro:hasPermission="zw:zwSamTask:cancel" class="pear-btn pear-btn-danger pear-btn-sm" lay-event="cancel">
+        <i class="layui-icon layui-icon-close"></i> 撤单
+    </button>
+    <button shiro:hasPermission="zw:zwSamTask:transfer" class="pear-btn pear-btn-warming pear-btn-sm" lay-event="transfer">
+        <i class="layui-icon layui-icon-edit"></i> 转作他理
+    </button>
+    {{#  } }}
+</script>
+
+<script type="text/html" id="sam-task-status">
+    {{#  if(d.status == 0){ }}<span class="layui-badge layui-bg-orange">待派</span>
+    {{#  } else if(d.status == 1){ }}<span class="layui-badge layui-bg-green">已派</span>
+    {{#  } else if(d.status == 2){ }}<span class="layui-badge layui-bg-gray">挂起</span>
+    {{#  } else if(d.status == 3){ }}<span class="layui-badge">撤单</span>
+    {{#  } else if(d.status == 4){ }}<span class="layui-badge layui-bg-blue">转作他理</span>
+    {{#  } }}
+</script>
+
+<th:block th:include="include :: footer"/>
+<script>
+    layui.use(['table', 'form', 'jquery', 'layer'], function () {
+        let table = layui.table;
+        let form = layui.form;
+        let $ = layui.jquery;
+        let layer = layui.layer;
+
+        let MODULE_PATH = rootPath + "/zwSamTask/";
+        let cols = [
+            [
+                {title: 'ID', field: 'id', align: 'center', hide: true},
+                {title: '事项编号', field: 'itemNo', align: 'center', width: 180},
+                {title: '点位代号', field: 'siteNo', align: 'center', width: 100},
+                {title: '承接班组', field: 'teamId', align: 'center', width: 100},
+                {title: '约定采样日终结', field: 'dueAt', align: 'center', width: 170},
+                {title: '提前浮出(天)', field: 'amount', align: 'center', width: 110},
+                {title: '真正派出时刻', field: 'dispatchAt', align: 'center', width: 170},
+                {title: '状态', field: 'status', align: 'center', width: 100, templet: '#sam-task-status'},
+                {title: '挂起原因', field: 'hangReason', align: 'center', minWidth: 200},
+                {title: '撤单/转理留痕', field: 'remark', align: 'center', minWidth: 220},
+                {title: '操作', toolbar: '#sam-task-bar', align: 'center', width: 200, fixed: 'right'}
+            ]
+        ];
+
+        table.render({
+            elem: '#sam-task-table',
+            url: MODULE_PATH + 'list',
+            page: true,
+            method: 'get',
+            cols: cols,
+            skin: 'line',
+            toolbar: '#sam-task-toolbar',
+            defaultToolbar: [{
+                layEvent: 'refresh',
+                icon: 'layui-icon-refresh'
+            }, 'filter', 'print', 'exports']
+        });
+
+        // 三种"没干活"分开亮：窗口外静默、窗口内无活、执行出错——不许混成一句
+        function showRunResult(res) {
+            let data = res.data || {};
+            let icon;
+            if (data.outcome === 'DISPATCHED') {
+                icon = 1;
+            } else if (data.outcome === 'IDLE' || data.outcome === 'SILENT') {
+                icon = 0;
+            } else {
+                icon = 2;
+            }
+            let msg = '';
+            if (data.outcome === 'DISPATCHED') {
+                msg = '生成 ' + data.generated + ' 条，待派 ' + data.waiting
+                    + ' 条，已派 ' + data.dispatched + ' 条，挂起 ' + data.hung + ' 条';
+                if (data.itemErrors && data.itemErrors.length > 0) {
+                    msg += '\n以下条目本轮未过账：\n' + data.itemErrors.join('\n');
+                }
+            } else {
+                msg = data.message || '';
+            }
+            layer.alert(msg, {icon: icon, title: '本轮派单结果'}, function (idx) {
+                layer.close(idx);
+                table.reload('sam-task-table');
+            });
+        }
+
+        table.on('toolbar(sam-task-table)', function (obj) {
+            if (obj.event === 'runOnce') {
+                $.ajax({
+                    url: MODULE_PATH + 'run',
+                    type: 'post',
+                    success: showRunResult
+                });
+            }
+        });
+
+        table.on('tool(sam-task-table)', function (obj) {
+            if (obj.event === 'cancel' || obj.event === 'transfer') {
+                let actText = obj.event === 'cancel' ? '撤单' : '转作他理';
+                layer.prompt({title: '请填写' + actText + '事由（留痕备查）', formType: 2}, function (reason, idx) {
+                    $.ajax({
+                        url: MODULE_PATH + obj.event,
+                        type: 'post',
+                        data: {id: obj.data.id, reason: reason},
+                        success: function (res) {
+                            if (res.code === 200) {
+                                layer.close(idx);
+                                layer.msg(actText + '已记账', {icon: 1});
+                                table.reload('sam-task-table');
+                            } else {
+                                layer.msg(res.msg || '操作未生效', {icon: 2});
+                            }
+                        }
+                    });
+                });
+            }
+        });
+
+        form.on('submit(sam-task-query)', function (data) {
+            table.reload('sam-task-table', {where: data.field, page: {curr: 1}});
+            return false;
+        });
+    });
+</script>
