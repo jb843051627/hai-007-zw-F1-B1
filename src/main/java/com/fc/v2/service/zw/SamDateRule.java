@@ -44,6 +44,21 @@ public final class SamDateRule {
     }
 
     /**
+     * 约定采样日的起点时刻：当日 00:00:00。
+     * 浮出只论自然日——"还剩 amount 天的那个自然日"一开盘，事项就该在待办名下，
+     * 不许锚在 23:59:59（当天末轮窗口 18:00 已关，正好到点的条目会被整体推到下一轮）。
+     */
+    public static Date startOfDay(Date day) {
+        Calendar c = Calendar.getInstance();
+        c.setTime(day);
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTime();
+    }
+
+    /**
      * 约定采样日的终结时刻：当日 23:59:59。
      * due_at 的唯一构造口——生成事项条时走这里，别处不许 new 一个别的钟点。
      */
@@ -66,18 +81,19 @@ public final class SamDateRule {
     }
 
     /**
-     * 浮出起始时刻 = 终结时刻往前推 amount 个自然日。
-     * 距约定日还剩 amount 天（到当日终结时刻）时，事项就该浮到待办名下。
+     * 浮出起始时刻 =（约定日往前推 amount 个自然日）当天的 00:00:00。
+     * "还剩 amount 天的那个自然日"一开盘事项就浮出，保证当天首个值班窗口（08:00）即可派出；
+     * 锚 23:59:59 会让当天两轮窗口全部错过，事项整体延后一轮才处理。
      */
     public static Date surfaceAt(Date dueAt, BigDecimal amount) {
         Calendar c = Calendar.getInstance();
         c.setTime(dueAt);
         c.add(Calendar.DAY_OF_MONTH, (int) -leadDays(amount));
-        return c.getTime();
+        return startOfDay(c.getTime());
     }
 
     /**
-     * 是否已浮出待办：{@code at >= dueAt - amount天}（含边界——"还剩 amount 天时浮出"）。
+     * 是否已浮出待办：{@code at >= 浮出自然日 00:00:00}（含边界——自然日开盘即浮出）。
      */
     public static boolean surfaced(Date dueAt, BigDecimal amount, Date at) {
         return epochSecond(at) >= epochSecond(surfaceAt(dueAt, amount));
